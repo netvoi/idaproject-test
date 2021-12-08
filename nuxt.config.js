@@ -7,7 +7,7 @@ export default {
 
   // Global page headers: https://go.nuxtjs.dev/config-head
   head: {
-    title: 'idaproject-test',
+    titleTemplate: '%s - Test task',
     htmlAttrs: {
       lang: 'en'
     },

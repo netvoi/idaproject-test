@@ -2,7 +2,7 @@
   <div>
     <div class="header">
       <h1 class="header-title">
-        <template v-if="isMobileAddMode">
+        <template v-if="windowWidth > 600 || isMobileAddMode">
           Добавление товара
         </template>
         <template v-else>
@@ -234,6 +234,9 @@ import SkeletonLoader from '@/components/SkeletonLoader.vue';
 
 export default {
   name: "product-list",
+  head: {
+    title: "Товары"
+  },
   components: {
     SkeletonLoader,
   },
