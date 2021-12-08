@@ -1,21 +1,51 @@
 <template>
   <div>
     <div class="header">
-      <h1 class="header-title">Добавление товара</h1>
+      <h1 class="header-title">
+        <template v-if="isMobileAddMode">
+          Добавление товара
+        </template>
+        <template v-else>
+          Список продуктов
+        </template>
+      </h1>
       <div
         @blur="customSelect.isOpen = false"
         class="custom-select"
         tabindex="0"
       >
         <div
-          @click="customSelect.isOpen = !customSelect.isOpen "
+          v-if="windowWidth > 600"
+          @click="customSelect.isOpen = !customSelect.isOpen"
           class="border form-field form-field--select"
         >
-          {{ customSelect.selected }}
+          {{ customSelect.selected.text }}
+        </div>
+        <div
+          v-else
+          class="custom-select-mobile-filters"
+        >
+          <template v-if="isMobileAddMode">
+            <button
+              @click="closeMobileAddMode"
+              class="mobile-icon-button mobile-icon-button--close"
+            ></button>
+          </template>
+          <template v-else>
+            <button
+              @click="mobile.addMode = !mobile.addMode"
+              class="mobile-icon-button mobile-icon-button--add"
+            ></button>
+            <button
+              @click="customSelect.isOpen = !customSelect.isOpen"
+              class="mobile-icon-button mobile-icon-button--filter"
+            ></button>
+          </template>
         </div>
         <div
           v-if="customSelect.isOpen"
           class="custom-select-options"
+          :class="{ 'custom-select-options--mobile': windowWidth <= 600 }"
         >
           <div
             v-for="(option, index) of customSelect.options"
@@ -29,20 +59,23 @@
                 customSelect.isOpen = false;
               "
             >
-              {{ option }}
+              {{ option.text }}
             </span>
             <span
               class="disabled"
               v-else
             >
-              {{ option }}
+              {{ option.text }}
             </span>
           </div>
         </div>
       </div>
     </div>
     <div class="main">
-      <div class="form border">
+      <div
+        v-if="windowWidth >= 600 || isMobileAddMode"
+        class="form border"
+      >
         <div class="form-item">
           <label
             class="required"
@@ -51,17 +84,27 @@
             Наименование товара
           </label>
           <input
+            v-model.trim="form.productName"
+            @blur="$v.form.productName.$touch()"
             id="productName"
             class="border form-field"
+            :class="{ 'form-field--error': $v.form.productName.$error }"
             type="text"
             placeholder="Введите наименование товара"
           />
+          <span
+            v-if="$v.form.productName.$error && !$v.form.productName.required"
+            class="error"
+          >
+            Поле является обязательным
+          </span>
         </div>
         <div class="form-item">
           <label for="productDescription">
             Описание товара
           </label>
           <textarea
+            v-model.trim="form.productDescription"
             id="productDescription"
             class="border form-field"
             name="description"
@@ -77,11 +120,20 @@
             Ссылка на изображение товара
           </label>
           <input
+            v-model.trim="form.productImgLink"
+            @blur="$v.form.productImgLink.$touch()"
             class="border form-field"
+            :class="{ 'form-field--error': $v.form.productImgLink.$error }"
             id="productImgLink"
             type="text"
             placeholder="Введите ссылку"
           />
+          <span
+            v-if="$v.form.productImgLink.$error && !$v.form.productImgLink.required"
+            class="error"
+          >
+            Поле является обязательным
+          </span>
         </div>
         <div class="form-item">
           <label
@@ -91,79 +143,287 @@
             Цена товара
           </label>
           <input
+            v-model.trim="price"
+            @blur="$v.form.productPrice.$touch()"
+            ref="productPrice"
             class="border form-field"
+            :class="{ 'form-field--error': $v.form.productPrice.$error }"
             id="productPrice"
             type="text"
             placeholder="Введите цену"
           />
+          <span
+            v-if="$v.form.productPrice.$error && !$v.form.productPrice.required"
+            class="error"
+          >
+            Поле является обязательным
+          </span>
         </div>
         <button
-          @click.stop
-          class="button button--success"
+          @click="createCard"
+          class="button"
+          :class="$v.form.$invalid ? 'button--disabled' : 'button--success'"
         >
           Добавить товар
         </button>
       </div>
-      <div class="cards">
-        <div
-          class="card border"
-          @mouseover="isCardHover = true"
-          @mouseleave="isCardHover = false"
+      <template v-if="windowWidth >= 600 || !isMobileAddMode">
+        <transition-group
+          v-if="cardsLoading || sortedCards.length"
+          class="cards"
+          name="list"
+          tag="div"
         >
-          <div class="img-wrapper">
-            <img
-              src=""
-              alt="product"
+          <template v-if="!cardsLoading">
+            <div
+              class="cards-item"
+              v-for="(card, index) in sortedCards"
+              :key="card.productId"
             >
-          </div>
-          <div class="card-content">
-            <h5 class="card-title">Наименование товара</h5>
-            <p class="card-description">
-              Довольно-таки интересное описание товара в несколько строк. Довольно-таки интересное описание товара в несколько строк
-            </p>
-            <span class="card-price">10 000 руб.</span>
-          </div>
-          <div
-            v-if="isCardHover"
-            class="card-button"
-          >
-            <button></button>
-          </div>
+              <div
+                @mouseover="isCardHover = true; hoveredProductCard = card;"
+                @mouseleave="isCardHover = false; hoveredProductCard = null;"
+                class="card border"
+              >
+                <div class="img-wrapper">
+                  <img
+                    :src="card.productImgLink"
+                    :alt="card.productName"
+                  >
+                </div>
+                <div class="card-content">
+                  <h5 class="card-title">{{ card.productName }}</h5>
+                  <p class="card-description">{{ card.productDescription }}</p>
+                  <span class="card-price">{{ card.productPrice }} руб.</span>
+                </div>
+                <div
+                  v-if="isCardHover && card === hoveredProductCard"
+                  class="card-button"
+                >
+                  <button
+                    @click="deleteCard(index)"
+                  ></button>
+                </div>
+              </div>
+            </div>
+          </template>
+          <template v-else>
+            <div
+              class="cards-item"
+              v-for="i in 3"
+              :key="i"
+            >
+              <SkeletonLoader class="card" />
+            </div>
+          </template>
+        </transition-group>
+        <div
+          v-else
+          class="cards"
+        >
+          <h2 class="cards-title">Добавленных товаров нет</h2>
         </div>
-      </div>
+      </template>
     </div>
   </div>
 </template>
 
 <script>
+import { required } from 'vuelidate/lib/validators';
+import SkeletonLoader from '@/components/SkeletonLoader.vue';
+
 export default {
   name: "product-list",
+  components: {
+    SkeletonLoader,
+  },
   data() {
     return {
+      cards: [],
+      cardsLoading: false,
       customSelect: {
         options: [
-          "По наименованию",
-          "По минимальной цене",
-          "По максимальной цене",
+          {
+            text: "По наименованию",
+            value: "name",
+          },
+          {
+            text: "По минимальной цене",
+            value: "min",
+          },
+          {
+            text: "По максимальной цене",
+            value: "max",
+          },
         ],
         isOpen: false,
-        selected: "По наименованию",
+        selected: {
+          text: "По наименованию",
+          value: "name",
+        },
+      },
+      form: {
+        productName: "",
+        productDescription: "",
+        productImgLink: "",
+        productPrice: null
       },
       isCardHover: false,
+      hoveredProductCard: null,
+      mobile: {
+        addMode: false,
+      },
+      windowWidth: window.innerWidth,
     };
   },
+  validations: {
+    form: {
+      productName: {required},
+      productImgLink: {required},
+      productPrice: {required},
+    }
+  },
+  computed: {
+    price: {
+      get: function () {
+        return this.form.productPrice;
+      },
+      set: function (price) {
+        this.form.productPrice = this.maskedPrice(price);
+      }
+    },
+    isMobileAddMode() {
+      return this.windowWidth <= 600 && this.mobile.addMode
+    },
+    sortedCards() {
+      switch (this.customSelect.selected.value) {
+        case 'name': {
+          this.sortByProperty(this.cards, 'productName');
+          break;
+        }
+        case 'min': {
+          this.sortByProperty(this.cards, 'productPrice');
+          break;
+        }
+        case 'max': {
+          this.sortByProperty(this.cards, 'productPrice');
+          this.cards.reverse();
+          break;
+        }
+      }
+
+      return this.cards;
+    }
+  },
+  async mounted() {
+    await this.loadCards();
+    this.$nextTick(() => {
+      window.addEventListener('resize', this.onResize);
+    });
+  },
+  beforeDestroy() {
+    window.removeEventListener('resize', this.onResize);
+  },
+  methods: {
+    async loadCards() {
+      this.cardsLoading = true;
+      await new Promise(resolve => setTimeout(resolve, 2000));
+      const cards = await this.getFromLocalStorage('cards');
+      this.cards = cards ? cards : [];
+      this.cardsLoading = false;
+    },
+    closeMobileAddMode() {
+      this.form = {
+        productId: null,
+        productName: "",
+        productDescription: "",
+        productImgLink: "",
+        productPrice: null
+      };
+      this.mobile.addMode = false;
+      this.$v.form.$reset();
+    },
+    createCard() {
+      this.$v.form.$touch();
+      if (this.$v.form.$invalid) {
+        return;
+      }
+
+      this.cards.push({
+        productId: Date.now(),
+        productName: this.form.productName,
+        productDescription: this.form.productDescription,
+        productImgLink: this.form.productImgLink,
+        productPrice: this.maskedPrice(this.form.productPrice),
+      });
+      this.form = {
+        productId: null,
+        productName: "",
+        productDescription: "",
+        productImgLink: "",
+        productPrice: null
+      };
+      this.mobile.addMode = false;
+      this.setToLocalStorage('cards', this.cards);
+
+      this.$v.form.$reset();
+    },
+    deleteCard(index) {
+      this.cards = this.cards.filter((card, id) => id !== index);
+      this.setToLocalStorage('cards', this.cards);
+    },
+    maskedPrice(price) {
+      if (!price || isNaN(price.replace(/ /g, ''))) return '';
+
+      return price
+        .toString()
+        .replace(/ /g, '')
+        .split('')
+        .map((num, i, arr) => {
+          return (arr.length - 1 - i) % 3 === 0 && i !== arr.length - 1
+            ? num + ' '
+            : num
+        })
+        .join('');
+    },
+    onResize() {
+      this.windowWidth = window.innerWidth;
+    },
+    sortByProperty(array, property) {
+      if (property === 'productPrice') {
+        array.sort((a, b) => {
+          const first = parseFloat(a[property].replace(/ /g, ''));
+          const second = parseFloat(b[property].replace(/ /g, ''));
+
+          if (first > second) return 1;
+          if (first < second) return -1;
+          return 0;
+        });
+      } else {
+        array.sort((a, b) => {
+          if (a[property] > b[property]) return 1;
+          if (a[property] < b[property]) return -1;
+          return 0;
+        });
+      }
+    },
+    getFromLocalStorage(name) {
+      return localStorage.getItem(name) ? JSON.parse(localStorage.getItem(name)) : null;
+    },
+    setToLocalStorage(name, value) {
+      this.removeFromLocalStorage(name);
+      localStorage.setItem(name, JSON.stringify(value));
+    },
+    removeFromLocalStorage(name) {
+      localStorage.removeItem(name);
+    }
+  }
 }
 </script>
 
 <style lang="scss" scoped>
+@import 'assets/styles/helpers';
 @import 'assets/styles/variables';
-
-button {
-  border: none;
-  outline: none;
-  background: none;
-  cursor: pointer;
-}
 
 .border {
   background-color: $light-beige;
@@ -206,8 +466,17 @@ button {
   }
 }
 
+.error {
+  display: inline-block;
+  margin-top: .4rem;
+  font-size: .8rem;
+  color: $red;
+}
+
+/* Header */
 .header {
   display: flex;
+  align-items: center;
   justify-content: space-between;
   padding-bottom: 1.6rem;
 }
@@ -215,22 +484,38 @@ button {
 .header-title {
   font-size: 2.8rem;
   font-weight: 600;
+
+  @media (max-width: 600px) {
+    font-size: 2rem;
+  }
 }
 
+/* Custom header select */
 .custom-select {
   position: relative;
   max-width: 20rem;
   outline: none;
 }
 
+.custom-select-mobile-filters {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
 .custom-select-options {
   position: absolute;
   left: 0;
   right: 0;
-  z-index: 1;
+  z-index: 10;
   overflow: hidden;
   border-radius: 0 0 .4rem .4rem;
   box-shadow: 0 .2rem .5rem rgba(0, 0, 0, 0.1);
+
+  &--mobile {
+    left: -10.5rem;
+    top: calc(100% + 1rem);
+  }
 }
 
 .custom-select-option {
@@ -257,32 +542,84 @@ button {
   }
 
   span.disabled {
-    background-color: rgba(#000, .1);
+    background-color: lighten(#000, 90%);
   }
 }
 
+/* Main content */
 .main {
   display: flex;
+  align-items: flex-start;
+
+  @media (max-width: 600px) {
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+  }
 }
 
+/* Cards */
 .cards {
-  align-items: flex-start;
   display: flex;
-  flex-basis: 75.85%;
+  align-items: stretch;
+  align-content: stretch;
   flex-direction: row;
   flex-wrap: wrap;
+  width: 75.85%;
+
+  @media (min-width: 768px) and (max-width: 1024px) {
+    width: 65%;
+  }
+
+  @media (min-width: 600px) and (max-width: 768px) {
+    width: 50%;
+  }
+
+  @media (max-width: 600px) {
+    width: 100%;
+    margin-top: 1.6rem;
+  }
 }
 
+.cards-title {
+  padding-left: 1.6rem;
+  font-size: 2.4rem;
+  font-weight: 600;
+}
+
+.cards-item {
+  transition: transform .2s linear;
+  width: 33.3333%;
+  padding: 0 0 1.6rem 1.6rem;
+
+  @media (min-width: 768px) and (max-width: 1024px) {
+    width: 50%;
+  }
+
+  @media (min-width: 320px) and (max-width: 768px) {
+    width: 100%;
+  }
+
+  @media (min-width: 425px) and (max-width: 600px) {
+    margin-left: auto;
+    margin-right: auto;
+    width: 80%;
+  }
+
+  @media (max-width: 425px) {
+    width: 90%;
+  }
+}
+
+/* Card */
 .card {
   transition: transform .2s linear;
   position: relative;
-  margin: 0 0 1.6rem 1.6rem;
-  max-width: 31.8%;
-  width: 100%;
+  height: 100%;
   cursor: pointer;
 
   &:hover {
-    transform: scale(1.05);
+    transform: scale(1.03);
   }
 }
 
@@ -297,7 +634,10 @@ button {
 }
 
 .card-description {
-  padding-bottom: 3.2rem;
+  margin-bottom: 3.2rem;
+  padding-right: .6rem;
+  max-height: 10rem;
+  overflow: auto;
 }
 
 .card-price {
@@ -311,6 +651,7 @@ button {
   right: -.8rem;
 
   button {
+    transition: background-color .2s linear;
     position: relative;
     width: 3.2rem;
     height: 3.2rem;
@@ -319,7 +660,6 @@ button {
 
     &::after {
       content: '';
-      transition: background-size .2s linear;
       position: absolute;
       top: 0;
       bottom: 0;
@@ -331,9 +671,7 @@ button {
     }
 
     &:hover {
-      &::after {
-        background-size: 2.3rem;
-      }
+      background-color: darken($red, 10%);
     }
   }
 }
@@ -355,10 +693,23 @@ button {
   }
 }
 
+/* Form */
 .form {
   padding: 2.4rem;
-  flex-basis: 24.15%;
+  width: 24.15%;
   height: max-content;
+
+  @media (min-width: 768px) and (max-width: 1024px) {
+    width: 35%;
+  }
+
+  @media (min-width: 600px) and (max-width: 768px) {
+    width: 50%;
+  }
+
+  @media (max-width: 600px) {
+    width: 100%;
+  }
 }
 
 .form-item {
@@ -398,7 +749,8 @@ button {
 .form-field {
   transition: box-shadow .2s linear;
   width: 100%;
-  border: none;
+  border: 1px solid transparent;
+  border-radius: .4rem;
   box-shadow: 0 .2rem .5rem rgba(0, 0, 0, 0.1);
   outline: none;
   padding: 1rem 1.6rem;
@@ -407,6 +759,18 @@ button {
   font-family: inherit;
   line-height: 1.5rem;
   color: $dark-grey;
+
+  &:hover {
+    box-shadow: 0 .2rem .5rem rgba($dark-blue, 0.7);
+  }
+
+  &:focus {
+    box-shadow: 0 .2rem .5rem $light-grey;
+  }
+
+  &::placeholder {
+    color: $light-grey;
+  }
 
   &--select {
     width: 100%;
@@ -430,16 +794,49 @@ button {
     }
   }
 
-  &::placeholder {
-    color: $light-grey;
+  &--error {
+    border: 1px solid $red;
+    box-shadow: none;
+
+    &:hover {
+      box-shadow: 0 .2rem .5rem rgba($red, 0.7);
+    }
+  }
+}
+
+/* Mobiles header buttons */
+.mobile-icon-button {
+  width: 1.6rem;
+  height: 1.6rem;
+  margin: 0 .5rem;
+  padding: 0;
+
+  &--add {
+    background: url('../../assets/img/add.svg') center / 1.6rem no-repeat;
   }
 
-  &:hover {
-    box-shadow: 0 .2rem .5rem rgba($dark-blue, 0.7);
+  &--close {
+    background: url('../../assets/img/close.svg') center / 1.6rem no-repeat;
   }
 
-  &:focus {
-    box-shadow: 0 .2rem .5rem $light-grey;
+  &--filter {
+    background: url('../../assets/img/filter.svg') center / 1.6rem no-repeat;
   }
+}
+
+/* Animation */
+.list-enter-active, .list-leave-active {
+  transition: transform .4s linear, opacity .2s linear;
+}
+
+.list-enter, .list-leave-to {
+  opacity: 0;
+  transform: scale(0);
+}
+
+.list-enter-to,
+.list-leave {
+  opacity: 1;
+  transform: scale(1);
 }
 </style>
